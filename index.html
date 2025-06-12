@@ -1,294 +1,267 @@
 <!DOCTYPE html>
-<html lang="en">
+
+<html lang="zh">
+
 <head>
+
   <meta charset="UTF-8" />
-  <title>3D 魔術方塊（真實旋轉）</title>
+
+  <title>自訂瀏覽器模擬器</title>
+
   <style>
-    body {
-      margin: 0;
-      background: #111;
-      height: 100vh;
+
+    body { font-family: sans-serif; margin: 0; }
+
+    .toolbar {
+
+      display: flex; gap: 8px; padding: 8px; background: #eee;
+
+      align-items: center; border-bottom: 1px solid #ccc;
+
+    }
+
+    .toolbar input[type="text"] {
+
+      flex: 1; padding: 6px; border-radius: 4px; border: 1px solid #aaa;
+
+    }
+
+    .tabs {
+
+      display: flex; background: #ddd; border-bottom: 1px solid #999;
+
+      overflow-x: auto;
+
+    }
+
+    .tab {
+
       display: flex;
-      justify-content: center;
+
       align-items: center;
-      flex-direction: column;
-      overflow: hidden;
-      color: white;
-    }
-    .controls {
-      position: absolute;
-      top: 20px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      z-index: 10;
-    }
-    .controls button {
-      font-size: 50px;
-      padding: 50px 50px;
-      border-radius: 50px;
-      background-color: #444;
-      border: none;
-      color: white;
+
+      padding: 8px 12px;
+
       cursor: pointer;
-    }
-    .scene {
-      perspective: 1000px;
-      width: 400px;
-      height: 400px;
-      touch-action: none;
-    }
-    .cube {
-      width: 300px;
-      height: 300px;
+
+      border-right: 1px solid #aaa;
+
       position: relative;
-      transform-style: preserve-3d;
-      transform: rotateX(-30deg) rotateY(30deg);
-      transition: transform 0.1s ease-out;
+
     }
-    .cubelet {
-      width: 90px;
-      height: 90px;
-      position: absolute;
-      transform-style: preserve-3d;
-      transition: transform 0.3s ease;
+
+    .tab.active {
+
+      background: #fff; font-weight: bold;
+
     }
-    .face {
-      position: absolute;
-      width: 90px;
-      height: 90px;
-      background: #333;
-      border: 1px solid #000;
-      backface-visibility: hidden;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-size: 30px;
+
+    .tab .close-btn {
+
+      margin-left: 8px;
+
+      color: red;
+
       font-weight: bold;
-      color: black;
+
+      cursor: pointer;
+
     }
+
+    iframe {
+
+      width: 100%; height: calc(100vh - 106px); border: none;
+
+    }
+
   </style>
+
 </head>
+
 <body>
-<div class="controls">
-  <button onclick="rotateLayer('U')">U'</button>
-  <button onclick="rotateLayer('U', true)">U</button>
-  <button onclick="rotateLayer('D')">D</button>
-  <button onclick="rotateLayer('D', true)">D'</button>
-  <button onclick="rotateLayer('L')">L</button>
-  <button onclick="rotateLayer('L', true)">L'</button>
-  <button onclick="rotateLayer('R')">R'</button>
-  <button onclick="rotateLayer('R', true)">R</button>
-  <button onclick="rotateLayer('F')">F'</button>
-  <button onclick="rotateLayer('F', true)">F</button>
-  <button onclick="rotateLayer('B')">B</button>
-  <button onclick="rotateLayer('B', true)">B'</button>
-  <button onclick="scramble()">打亂</button>
-  <button onclick="undoScramble()">還原</button>
-  <button onclick="checkSolved()">完成檢查</button>
-</div>
 
-<div class="scene">
-  <div class="cube" id="cube"></div>
-</div>
+  <div class="tabs" id="tabBar"></div>
 
-<script>
-const cube = document.getElementById('cube');
-const cubelets = [];
-const offset = [-1, 0, 1];
-const state = [];
-let savedState = [];
+  <div class="toolbar">
 
-const faceNormals = {
-  up:    [0, 1, 0],
-  down:  [0, -1, 0],
-  front: [0, 0, 1],
-  back:  [0, 0, -1],
-  left:  [-1, 0, 0],
-  right: [1, 0, 0]
-};
-const faceCenterLabel = {
-  up: 'U', down: 'D',
-  front: 'F', back: 'B',
-  left: 'L', right: 'R'
-};
+    <button onclick="goBack()">←</button>
 
-function identityMatrix() {
-  return [[1,0,0],[0,1,0],[0,0,1]];
-}
-function rotateMatrix(axis, dir) {
-  if (axis === 'x') return [[1,0,0],[0,0,-dir],[0,dir,0]];
-  if (axis === 'y') return [[0,0,dir],[0,1,0],[-dir,0,0]];
-  if (axis === 'z') return [[0,-dir,0],[dir,0,0],[0,0,1]];
-}
-function multiplyMatrix(a, b) {
-  const result = Array(3).fill().map(() => Array(3).fill(0));
-  for (let i=0; i<3; i++) for (let j=0; j<3; j++)
-    for (let k=0; k<3; k++) result[i][j] += a[i][k] * b[k][j];
-  return result;
-}
-function rotateVector(vec, mat) {
-  return [
-    mat[0][0]*vec[0] + mat[0][1]*vec[1] + mat[0][2]*vec[2],
-    mat[1][0]*vec[0] + mat[1][1]*vec[1] + mat[1][2]*vec[2],
-    mat[2][0]*vec[0] + mat[2][1]*vec[1] + mat[2][2]*vec[2]
-  ];
-}
-function getFaceColor(name) {
-  return {
-    up: 'yellow', down: 'white',
-    front: 'green', back: 'blue',
-    left: 'red', right: 'orange'
-  }[name];
-}
+    <button onclick="goForward()">→</button>
 
-// 建立 cubelet
-offset.forEach(x => offset.forEach(y => offset.forEach(z => {
-  const cubelet = document.createElement('div');
-  cubelet.className = 'cubelet';
-  const pos = { cubelet, x, y, z, orientation: identityMatrix() };
-  Object.entries(faceNormals).forEach(([name, normal]) => {
-    const face = document.createElement('div');
-    face.className = 'face';
-    face.dataset.normal = normal.join(',');
-    face.style.background = getFaceColor(name);
-    if (x === 0 && y === 0 && z === 0) return;
-    if (x === 0 && y === 1 && z === 0 && name === 'up') face.textContent = 'U';
-    if (x === 0 && y === -1 && z === 0 && name === 'down') face.textContent = 'D';
-    if (x === 0 && y === 0 && z === 1 && name === 'front') face.textContent = 'F';
-    if (x === 0 && y === 0 && z === -1 && name === 'back') face.textContent = 'B';
-    if (x === -1 && y === 0 && z === 0 && name === 'left') face.textContent = 'L';
-    if (x === 1 && y === 0 && z === 0 && name === 'right') face.textContent = 'R';
-    cubelet.appendChild(face);
-  });
-  cube.appendChild(cubelet);
-  cubelets.push(cubelet);
-  state.push(pos);
-  updateTransform(pos);
-})))
+    <input type="text" id="urlInput" placeholder="輸入網址..." />
 
-function rotateLayer(face, reverse = false) {
-  let axis, layerCoord;
-  switch (face) {
-    case 'U': axis = 'y'; layerCoord = 1; break;
-    case 'D': axis = 'y'; layerCoord = -1; break;
-    case 'L': axis = 'x'; layerCoord = -1; break;
-    case 'R': axis = 'x'; layerCoord = 1; break;
-    case 'F': axis = 'z'; layerCoord = 1; break;
-    case 'B': axis = 'z'; layerCoord = -1; break;
-  }
-  const dir = reverse ? -1 : 1;
-  const rotMat = rotateMatrix(axis, dir);
-  const layer = state.filter(c => c[axis] === layerCoord);
-  layer.forEach(c => {
-    [c.x, c.y, c.z] = rotateVector([c.x, c.y, c.z], rotMat);
-    c.orientation = multiplyMatrix(rotMat, c.orientation);
-    updateTransform(c);
-  });
-}
+    <button onclick="navigate()">前往</button>
 
-function updateTransform(c) {
-  c.cubelet.style.transform = `translate3d(${c.x * 100}px, ${-c.y * 100}px, ${c.z * 100}px)`;
-  const faces = c.cubelet.querySelectorAll('.face');
-  faces.forEach(f => {
-    const localNormal = f.dataset.normal.split(',').map(Number);
-    const world = rotateVector(localNormal, c.orientation);
-    const [x, y, z] = world;
-    let rot = '';
-    if (x === 1) rot = 'rotateY(90deg)';
-    else if (x === -1) rot = 'rotateY(-90deg)';
-    else if (y === 1) rot = 'rotateX(90deg)';
-    else if (y === -1) rot = 'rotateX(-90deg)';
-    else if (z === -1) rot = 'rotateY(180deg)';
-    f.style.transform = `${rot} translateZ(45px)`;
-  });
-}
+    <button onclick="newTab()">新增分頁</button>
 
-// 儲存與復原
-function saveState() {
-  savedState = state.map(c => ({
-    x: c.x, y: c.y, z: c.z,
-    orientation: c.orientation.map(row => [...row])
-  }));
-}
-function loadState() {
-  savedState.forEach((s, i) => {
-    const c = state[i];
-    c.x = s.x;
-    c.y = s.y;
-    c.z = s.z;
-    c.orientation = s.orientation.map(row => [...row]);
-    updateTransform(c);
-  });
-}
+  </div>
 
-// 打亂
-function scramble() {
-  saveState();
-  const faces = ['U','D','L','R','F','B'];
-  for (let i = 0; i < 30; i++) {
-    const f = faces[Math.floor(Math.random() * 6)];
-    const rev = Math.random() < 0.5;
-    rotateLayer(f, rev);
-  }
-}
-function undoScramble() {
-  loadState();
-}
+  <iframe id="browserView" src=""></iframe>
 
-// 完成檢查
-function checkSolved() {
-  const groups = {};
-  state.forEach(c => {
-    const faces = c.cubelet.querySelectorAll('.face');
-    faces.forEach(f => {
-      const local = f.dataset.normal.split(',').map(Number);
-      const world = rotateVector(local, c.orientation).join(',');
-      if (!groups[world]) groups[world] = [];
-      groups[world].push(f.style.background);
-    });
-  });
-  let solved = true;
-  Object.values(groups).forEach(colors => {
-    const first = colors[0];
-    if (!colors.every(c => c === first)) solved = false;
-  });
-  alert(solved ? '完成！' : '尚未完成');
-}
+  <script>
 
-// 視角控制
-let isDragging = false, startX = 0, startY = 0;
-let rotX = -30, rotY = 30;
-function updateCubeRotation(dx, dy) {
-  rotY += dx * 0.3;
-  rotX -= dy * 0.3;
-  cube.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
-}
-cube.addEventListener('mousedown', e => {
-  isDragging = true;
-  startX = e.clientX;
-  startY = e.clientY;
-});
-window.addEventListener('mouseup', () => isDragging = false);
-window.addEventListener('mousemove', e => {
-  if (!isDragging) return;
-  updateCubeRotation(e.clientX - startX, e.clientY - startY);
-  startX = e.clientX;
-  startY = e.clientY;
-});
-cube.addEventListener('touchstart', e => {
-  isDragging = true;
-  startX = e.touches[0].clientX;
-  startY = e.touches[0].clientY;
-}, { passive: true });
-cube.addEventListener('touchmove', e => {
-  if (!isDragging) return;
-  const touch = e.touches[0];
-  updateCubeRotation(touch.clientX - startX, touch.clientY - startY);
-  startX = touch.clientX;
-  startY = touch.clientY;
-}, { passive: true });
-cube.addEventListener('touchend', () => isDragging = false);
-</script>
+    const tabs = [];
+
+    let currentTabIndex = -1;
+
+    function newTab(initialUrl = "https://example.com") {
+
+      const newTab = {
+
+        history: [initialUrl],
+
+        currentIndex: 0
+
+      };
+
+      tabs.push(newTab);
+
+      currentTabIndex = tabs.length - 1;
+
+      renderTabs();
+
+      loadCurrentTab();
+
+    }
+
+    function renderTabs() {
+
+      const tabBar = document.getElementById("tabBar");
+
+      tabBar.innerHTML = "";
+
+      tabs.forEach((tab, index) => {
+
+        const div = document.createElement("div");
+
+        div.className = "tab" + (index === currentTabIndex ? " active" : "");
+
+        div.textContent = `分頁 ${index + 1}`;
+
+        const closeBtn = document.createElement("span");
+
+        closeBtn.textContent = "✕";
+
+        closeBtn.className = "close-btn";
+
+        closeBtn.onclick = (e) => {
+
+          e.stopPropagation(); // 不觸發 tab 切換
+
+          closeTab(index);
+
+        };
+
+        div.appendChild(closeBtn);
+
+        div.onclick = () => {
+
+          currentTabIndex = index;
+
+          renderTabs();
+
+          loadCurrentTab();
+
+        };
+
+        tabBar.appendChild(div);
+
+      });
+
+    }
+
+    function closeTab(index) {
+
+      tabs.splice(index, 1);
+
+      if (currentTabIndex >= index) {
+
+        currentTabIndex = Math.max(0, currentTabIndex - 1);
+
+      }
+
+      if (tabs.length === 0) {
+
+        currentTabIndex = -1;
+
+        document.getElementById("browserView").src = "";
+
+        document.getElementById("urlInput").value = "";
+
+      }
+
+      renderTabs();
+
+      loadCurrentTab();
+
+    }
+
+    function loadCurrentTab() {
+
+      if (currentTabIndex === -1 || !tabs[currentTabIndex]) return;
+
+      const tab = tabs[currentTabIndex];
+
+      const url = tab.history[tab.currentIndex];
+
+      document.getElementById("browserView").src = url;
+
+      document.getElementById("urlInput").value = url;
+
+    }
+
+    function navigate() {
+
+      const url = document.getElementById("urlInput").value;
+
+      if (!url) return;
+
+      const tab = tabs[currentTabIndex];
+
+      tab.history = tab.history.slice(0, tab.currentIndex + 1);
+
+      tab.history.push(url);
+
+      tab.currentIndex++;
+
+      loadCurrentTab();
+
+    }
+
+    function goBack() {
+
+      const tab = tabs[currentTabIndex];
+
+      if (tab.currentIndex > 0) {
+
+        tab.currentIndex--;
+
+        loadCurrentTab();
+
+      }
+
+    }
+
+    function goForward() {
+
+      const tab = tabs[currentTabIndex];
+
+      if (tab.currentIndex < tab.history.length - 1) {
+
+        tab.currentIndex++;
+
+        loadCurrentTab();
+
+      }
+
+    }
+
+    // 預設開啟一個分頁
+
+    newTab();
+
+  </script>
+
 </body>
+
 </html>
